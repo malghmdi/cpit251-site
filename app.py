@@ -72,7 +72,7 @@ HTML_PAGE = '''
     <header>
         <div>
             <h1 style="margin:0; font-size: 22px;">3D Asset & Model Hub</h1>
-            <small>Structured Web Architecture & CRUD System — CPIT251</small>
+            <small>Structured Web Architecture & CRUD System </small>
         </div>
         <nav>
             <a href="/assets/search">Home / Browse</a>
