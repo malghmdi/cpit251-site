@@ -17,7 +17,6 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 def init_db():
     conn = sqlite3.connect("database.db")
     c = conn.cursor()
-    # Table for items/assets
     c.execute('''CREATE TABLE IF NOT EXISTS assets (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     title TEXT NOT NULL,
@@ -26,17 +25,38 @@ def init_db():
                     description TEXT NOT NULL,
                     filename TEXT
                 )''')
-    # Table for Users (Demonstrates Security & Password Hashing)
     c.execute('''CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT UNIQUE NOT NULL,
                     password_hash TEXT NOT NULL
                 )''')
-    # Create default admin account (Username: admin, Password: password123)
     c.execute("SELECT * FROM users WHERE username = 'admin'")
     if not c.fetchone():
         hashed_pw = generate_password_hash("password123")
         c.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", ("admin", hashed_pw))
+
+    # --- AUTO-SEED DEFAULT ASSETS SO RENDER NEVER WIPES THEM ---
+    c.execute("SELECT COUNT(*) FROM assets")
+    if c.fetchone()[0] == 0:
+        default_assets = [
+            ("Baked Low-Poly Sword & Character Rig", "Rigged", ".FBX",
+             "Kaydara FBX Binary asset exported from Blender (v5.0.1). Features a low-poly baked sword and character head mesh (FBHead_mesh) configured with an armature rig, dual camera setups, area lighting, and Phong surface shading with default UV mapping.",
+             "BakedLow-Swordfr.fbx"),
+            ("Modular 3D Drawer Furniture Asset", "Environment", ".BLEND",
+             "Native Blender 3D scene file containing a modular drawer environment prop. Includes clean polygon topology, local transformation hierarchies, and material slot definitions ready for scene assembly and rendering.",
+             "Mydrawer.blend1"),
+            ("Claidheamh Mor Two-Handed Sword (PBR & Skinned)", "Rigged", ".GLB",
+             "glTF 2.0 binary weapon asset generated via Khronos glTF Blender I/O (v3.6.28). Contains dual skinned mesh primitives (3,639 vertices each) rigged to a weapon_bone armature hierarchy with embedded PNG base-color textures.",
+             "cladheamh_mor.glb"),
+            ("Enemy Level 0 Rigged Character", "Character", ".FBX",
+             "Kaydara FBX binary character asset exported from Blender (v3.6.5). Features a skeletal armature hierarchy (Armature_36 / skin0), polygon mesh geometry (Object_0), and Phong surface material definitions.",
+             "bacterialevel_0.fbx"),
+            ("3D Bedroom & Gaming Desk Environment Scene", "Environment", ".GLB",
+             "Comprehensive 31-node glTF 2.0 interior environment exported via Blender (v4.3.47). Includes modular architectural meshes and detailed props using 43 embedded PBR textures.",
+             "room.glb")
+        ]
+        c.executemany("INSERT INTO assets (title, category, format, description, filename) VALUES (?, ?, ?, ?, ?)", default_assets)
+
     conn.commit()
     conn.close()
 
