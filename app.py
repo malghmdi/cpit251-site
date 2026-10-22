@@ -36,24 +36,25 @@ def init_db():
         c.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", ("admin", hashed_pw))
 
     # --- AUTO-SEED DEFAULT ASSETS SO RENDER NEVER WIPES THEM ---
+# --- AUTO-SEED DEFAULT ASSETS SO RENDER NEVER WIPES THEM ---
     c.execute("SELECT COUNT(*) FROM assets")
     if c.fetchone()[0] == 0:
         default_assets = [
-            ("Baked Low-Poly Sword & Character Rig", "Rigged", ".FBX",
-             "Kaydara FBX Binary asset exported from Blender (v5.0.1). Features a low-poly baked sword and character head mesh (FBHead_mesh) configured with an armature rig, dual camera setups, area lighting, and Phong surface shading with default UV mapping.",
-             "BakedLow-Swordfr.fbx"),
-            ("Modular 3D Drawer Furniture Asset", "Environment", ".BLEND",
-             "Native Blender 3D scene file containing a modular drawer environment prop. Includes clean polygon topology, local transformation hierarchies, and material slot definitions ready for scene assembly and rendering.",
+            ("Modular 3D Drawer Furniture", "Environment", ".BLEND",
+             "Native Blender 3D scene file containing a modular drawer environment prop. Includes clean polygon topology, local transformation hierarchies, and material slot definitions.",
              "Mydrawer.blend1"),
-            ("Claidheamh Mor Two-Handed Sword (PBR & Skinned)", "Rigged", ".GLB",
-             "glTF 2.0 binary weapon asset generated via Khronos glTF Blender I/O (v3.6.28). Contains dual skinned mesh primitives (3,639 vertices each) rigged to a weapon_bone armature hierarchy with embedded PNG base-color textures.",
+            
+            ("Enemy Bacteria (Level 0)", "Character", ".FBX",
+             "Kaydara FBX binary character asset. Features a skeletal armature hierarchy, polygon mesh geometry, and Phong surface material definitions for game development.",
+             "bacteria_level_0.fbx"),
+            
+            ("Claidheamh Mòr Two-Handed Sword", "Rigged Model", ".GLB",
+             "glTF 2.0 binary weapon asset. Contains dual skinned mesh primitives rigged to a weapon_bone armature hierarchy with embedded PBR textures.",
              "cladheamh_mor.glb"),
-            ("Enemy Level 0 Rigged Character", "Character", ".FBX",
-             "Kaydara FBX binary character asset exported from Blender (v3.6.5). Features a skeletal armature hierarchy (Armature_36 / skin0), polygon mesh geometry (Object_0), and Phong surface material definitions.",
-             "bacterialevel_0.fbx"),
-            ("3D Bedroom & Gaming Desk Environment Scene", "Environment", ".GLB",
-             "Comprehensive 31-node glTF 2.0 interior environment exported via Blender (v4.3.47). Includes modular architectural meshes and detailed props using 43 embedded PBR textures.",
-             "room.glb")
+            
+            ("FCIT Building Architectural Model", "Environment", ".GLB",
+             "3D architectural visualization model of the Faculty of Computing and Information Technology (FCIT) building. Features structured mesh geometry representing the exterior facade and environment layout.",
+             "fcit_building.glb")
         ]
         c.executemany("INSERT INTO assets (title, category, format, description, filename) VALUES (?, ?, ?, ?, ?)", default_assets)
 
