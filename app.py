@@ -37,24 +37,25 @@ def init_db():
 
     # --- AUTO-SEED DEFAULT ASSETS SO RENDER NEVER WIPES THEM ---
 # --- AUTO-SEED DEFAULT ASSETS SO RENDER NEVER WIPES THEM ---
+# --- AUTO-SEED DEFAULT ASSETS SO RENDER NEVER WIPES THEM ---
     c.execute("SELECT COUNT(*) FROM assets")
     if c.fetchone()[0] == 0:
         default_assets = [
             ("Modular 3D Drawer Furniture", "Environment", ".BLEND",
              "Native Blender 3D scene file containing a modular drawer environment prop. Includes clean polygon topology, local transformation hierarchies, and material slot definitions.",
-             "Mydrawer.blend1"),
+             "Mydrawer.blend"),
             
-            ("Enemy Bacteria (Level 0)", "Character", ".FBX",
-             "Kaydara FBX binary character asset. Features a skeletal armature hierarchy, polygon mesh geometry, and Phong surface material definitions for game development.",
-             "bacteria_level_0.fbx"),
+            ("Enemy Bacteria (Level 0)", "Character", ".ZIP",
+             "Kaydara FBX binary character asset bundled with external textures. Features a skeletal armature hierarchy and polygon mesh geometry.",
+             "bacteria-fbx-free-standard.zip"),
             
             ("Claidheamh Mòr Two-Handed Sword", "Rigged Model", ".GLB",
              "glTF 2.0 binary weapon asset. Contains dual skinned mesh primitives rigged to a weapon_bone armature hierarchy with embedded PBR textures.",
-             "cladheamh_mor.glb"),
+             "cladheamh mor.glb"),
             
-            ("FCIT Building Architectural Model", "Environment", ".GLB",
-             "3D architectural visualization model of the Faculty of Computing and Information Technology (FCIT) building. Features structured mesh geometry representing the exterior facade and environment layout.",
-             "fcit_building.glb")
+            ("FCIT Building Architectural Model", "Environment", ".ZIP",
+             "3D architectural visualization model of the Faculty of Computing and Information Technology (FCIT) building. Features structured mesh geometry representing the exterior facade.",
+             "kau-fcit-bulding.zip")
         ]
         c.executemany("INSERT INTO assets (title, category, format, description, filename) VALUES (?, ?, ?, ?, ?)", default_assets)
 
