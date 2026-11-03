@@ -1,6 +1,8 @@
-
 import os
 import sqlite3
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
 from flask import Flask, request, redirect, url_for, send_from_directory, session, render_template_string, Response
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -17,6 +19,7 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 def init_db():
     conn = sqlite3.connect("database.db")
     c = conn.cursor()
+    # Table for items/assets
     c.execute('''CREATE TABLE IF NOT EXISTS assets (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     title TEXT NOT NULL,
@@ -25,40 +28,17 @@ def init_db():
                     description TEXT NOT NULL,
                     filename TEXT
                 )''')
+    # Table for Users (Demonstrates Security & Password Hashing)
     c.execute('''CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT UNIQUE NOT NULL,
                     password_hash TEXT NOT NULL
                 )''')
+    # Create default admin account (Username: admin, Password: password123)
     c.execute("SELECT * FROM users WHERE username = 'admin'")
     if not c.fetchone():
         hashed_pw = generate_password_hash("password123")
         c.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", ("admin", hashed_pw))
-
-    # --- AUTO-SEED DEFAULT ASSETS SO RENDER NEVER WIPES THEM ---
-# --- AUTO-SEED DEFAULT ASSETS SO RENDER NEVER WIPES THEM ---
-# --- AUTO-SEED DEFAULT ASSETS SO RENDER NEVER WIPES THEM ---
-    c.execute("SELECT COUNT(*) FROM assets")
-    if c.fetchone()[0] == 0:
-        default_assets = [
-            ("Modular 3D Drawer Furniture", "Environment", ".BLEND",
-             "Native Blender 3D scene file containing a modular drawer environment prop. Includes clean polygon topology, local transformation hierarchies, and material slot definitions.",
-             "Mydrawer.blend"),
-            
-            ("Enemy Bacteria (Level 0)", "Character", ".ZIP",
-             "Kaydara FBX binary character asset bundled with external textures. Features a skeletal armature hierarchy and polygon mesh geometry.",
-             "bacteria-fbx-free-standard.zip"),
-            
-            ("Claidheamh Mòr Two-Handed Sword", "Rigged Model", ".GLB",
-             "glTF 2.0 binary weapon asset. Contains dual skinned mesh primitives rigged to a weapon_bone armature hierarchy with embedded PBR textures.",
-             "cladheamh mor.glb"),
-            
-            ("FCIT Building Architectural Model", "Environment", ".ZIP",
-             "3D architectural visualization model of the Faculty of Computing and Information Technology (FCIT) building. Features structured mesh geometry representing the exterior facade.",
-             "kau-fcit-bulding.zip")
-        ]
-        c.executemany("INSERT INTO assets (title, category, format, description, filename) VALUES (?, ?, ?, ?, ?)", default_assets)
-
     conn.commit()
     conn.close()
 
@@ -117,6 +97,14 @@ HTML_PAGE = '''
 </body>
 </html>
 '''
+
+cloudinary.config(
+  cloud_name = "y5oxbi6z",
+  api_key = "536198723416148",
+  api_secret = "kCeFanEjLKdnIflWO0LlAR67Tqo",
+  secure = True
+)
+
 
 # --- 2. URL ROUTES (Demonstrating Structured URLs & Query Strings) ---
 
@@ -218,15 +206,21 @@ def upload_asset():
         fmt = request.form["format"]
         desc = request.form["description"]
         uploaded_file = request.files.get("file")
-        filename = None
+        
+        file_url = None
         if uploaded_file and uploaded_file.filename != "":
-            filename = secure_filename(uploaded_file.filename)
-            uploaded_file.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
-
+            # Upload directly to Cloudinary
+            upload_result = cloudinary.uploader.upload(
+                uploaded_file, 
+                resource_type="auto",
+                folder="mohannad3d_assets"
+            )
+            file_url = upload_result.get("secure_url")
+            
         conn = sqlite3.connect("database.db")
         c = conn.cursor()
         c.execute("INSERT INTO assets (title, category, format, description, filename) VALUES (?, ?, ?, ?, ?)",
-                  (title, category, fmt, desc, filename))
+                  (title, category, fmt, desc, file_url))
         conn.commit()
         conn.close()
         return redirect("/assets/search")
@@ -306,11 +300,13 @@ def delete_asset():
     conn.close()
     return redirect("/assets/search")
 
-# DOWNLOAD FILE (URL Example: /assets/download?file=model.obj)
+# DOWNLOAD FILE (Redirects directly to Cloudinary permanent secure URL)
 @app.route("/assets/download")
 def download_file():
-    filename = request.args.get("file")
-    return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=True)
+    file_url = request.args.get("file")
+    if file_url:
+        return redirect(file_url)
+    return "File not found", 404
 
 # --- 3. SECURITY & AUTHENTICATION (Password Hashing) ---
 @app.route("/auth/login", methods=["GET", "POST"])
