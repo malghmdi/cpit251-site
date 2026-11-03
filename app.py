@@ -101,7 +101,7 @@ HTML_PAGE = '''
         {{ content | safe }}
     </main>
     <footer>
-        <p>Developed by Mohannad Al Ghamdi | CPIT251 Website Design Project</p>
+        <p>Developed by Mohannad Al Ghamdi | Website Design Project</p>
     </footer>
 </body>
 </html>
