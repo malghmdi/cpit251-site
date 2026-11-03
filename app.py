@@ -1,19 +1,14 @@
 import os
-import sqlite3
+import psycopg2
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
-from flask import Flask, request, redirect, url_for, send_from_directory, session, render_template_string, Response
+from flask import Flask, request, redirect, url_for, session, render_template_string, Response
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = "cpit251_super_secret_key_mohannad"
-
-# Folder where uploaded files (3D models, images, PDFs) are stored
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
 # --- CLOUDINARY CONFIGURATION ---
 cloudinary.config(
@@ -23,65 +18,53 @@ cloudinary.config(
   secure = True
 )
 
-# --- 1. DATABASE SETUP (SQLite) ---
+# --- CLOUD DATABASE CONFIGURATION ---
+# Replace with your exact Neon.tech Connection String
+DB_URL = "postgresql://neondb_owner:npg_CuvDcYlA3J1P@ep-purple-wind-b3zam3ga-pooler.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+
+def get_db_connection():
+    return psycopg2.connect(DB_URL)
+
+# --- 1. DATABASE SETUP (PostgreSQL) ---
 def init_db():
-    conn = sqlite3.connect("database.db")
+    conn = get_db_connection()
     c = conn.cursor()
-    # Table for items/assets
+    # Table for items/assets (Postgres uses SERIAL instead of AUTOINCREMENT)
     c.execute('''CREATE TABLE IF NOT EXISTS assets (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     title TEXT NOT NULL,
                     category TEXT NOT NULL,
                     format TEXT NOT NULL,
                     description TEXT NOT NULL,
                     filename TEXT
                 )''')
-    # Table for Users (Demonstrates Security & Password Hashing)
+    # Table for Users
     c.execute('''CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     username TEXT UNIQUE NOT NULL,
                     password_hash TEXT NOT NULL
                 )''')
-    # Create default admin account (Username: admin, Password: password123)
+    
+    # Create default admin account so you can log in
     c.execute("SELECT * FROM users WHERE username = 'admin'")
     if not c.fetchone():
         hashed_pw = generate_password_hash("password123")
-        c.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", ("admin", hashed_pw))
+        c.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)", ("admin", hashed_pw))
     
-    # --- AUTO-SEED DEFAULT ASSETS SO RENDER NEVER WIPES THEM ---
-    c.execute("SELECT COUNT(*) FROM assets")
-    if c.fetchone()[0] == 0:
-        default_assets = [
-            ("Modular 3D Drawer Furniture", "Environment", ".BLEND",
-             "Native Blender 3D scene file containing a modular drawer environment prop. Includes clean polygon topology, local transformation hierarchies, and material slot definitions.",
-             "Mydrawer.blend"),
-            
-            ("Enemy Bacteria (Level 0)", "Character", ".ZIP",
-             "Kaydara FBX binary character asset bundled with external textures. Features a skeletal armature hierarchy and polygon mesh geometry.",
-             "bacteria-fbx-free-standard.zip"),
-            
-            ("Claidheamh Mòr Two-Handed Sword", "Rigged Model", ".GLB",
-             "glTF 2.0 binary weapon asset. Contains dual skinned mesh primitives rigged to a weapon_bone armature hierarchy with embedded PBR textures.",
-             "cladheamh mor.glb"),
-            
-        ]
-        c.executemany("INSERT INTO assets (title, category, format, description, filename) VALUES (?, ?, ?, ?, ?)", default_assets)
-
     conn.commit()
+    c.close()
     conn.close()
 
 init_db()
 
-# --- HTML TEMPLATE (With SEO Meta Tags & Semantic HTML5) ---
+# --- HTML TEMPLATE ---
 HTML_PAGE = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="3D Asset & Digital Resource Hub - Upload, search, manage, and download 3D models and project files. CPIT251 Project.">
-    <meta name="keywords" content="3D Models, OBJ, Blend, Digital Assets, CPIT251, Web Development">
-    <meta name="author" content="Mohannad Al Ghamdi">
+    <meta name="description" content="3D Asset Hub - CPIT251 Project.">
     <title>{{ page_title }} | 3D Asset Hub</title>
     <style>
         body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; background: #f4f6f9; color: #222; }
@@ -102,7 +85,7 @@ HTML_PAGE = '''
     <header>
         <div>
             <h1 style="margin:0; font-size: 22px;">3D Asset & Model Hub</h1>
-            <small>Structured Web Architecture & CRUD System </small>
+            <small>Structured Web Architecture & Cloud Database</small>
         </div>
         <nav>
             <a href="/assets/search">Home / Browse</a>
@@ -114,19 +97,17 @@ HTML_PAGE = '''
             {% endif %}
         </nav>
     </header>
-
     <main>
         {{ content | safe }}
     </main>
-
     <footer>
-        <p>Developed by Mohannad Al Ghamdi | CPIT251 Website Design & Development Project | <a href="/sitemap.xml">Sitemap</a> | <a href="/robots.txt">Robots.txt</a></p>
+        <p>Developed by Mohannad Al Ghamdi | CPIT251 Website Design Project</p>
     </footer>
 </body>
 </html>
 '''
 
-# --- 2. URL ROUTES (Demonstrating Structured URLs & Query Strings) ---
+# --- 2. URL ROUTES ---
 
 @app.route("/")
 def home():
@@ -138,19 +119,21 @@ def search_assets():
     query = request.args.get("q", "")
     category = request.args.get("category", "")
 
-    conn = sqlite3.connect("database.db")
+    conn = get_db_connection()
     c = conn.cursor()
     sql = "SELECT id, title, category, format, description, filename FROM assets WHERE 1=1"
     params = []
+    
     if query:
-        sql += " AND (title LIKE ? OR description LIKE ?)"
+        sql += " AND (title ILIKE %s OR description ILIKE %s)" 
         params.extend([f"%{query}%", f"%{query}%"])
     if category:
-        sql += " AND category = ?"
+        sql += " AND category = %s"
         params.append(category)
 
-    c.execute(sql, params)
+    c.execute(sql, tuple(params))
     rows = c.fetchall()
+    c.close()
     conn.close()
 
     items_html = ""
@@ -173,7 +156,7 @@ def search_assets():
         '''
 
     if not items_html:
-        items_html = "<p>No assets found. Log in as admin (<b>admin</b> / <b>password123</b>) and click <b>+ Add & Upload Asset</b> to create one!</p>"
+        items_html = "<p>No assets found.</p>"
 
     content = f'''
     <h2>Browse & Search 3D Assets</h2>
@@ -196,11 +179,13 @@ def search_assets():
 @app.route("/assets/view", methods=["GET"])
 def view_asset():
     asset_id = request.args.get("id", "1")
-    conn = sqlite3.connect("database.db")
+    conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT id, title, category, format, description, filename FROM assets WHERE id = ?", (asset_id,))
+    c.execute("SELECT id, title, category, format, description, filename FROM assets WHERE id = %s", (asset_id,))
     r = c.fetchone()
+    c.close()
     conn.close()
+    
     if not r:
         return render_template_string(HTML_PAGE, page_title="404 Not Found", content="<h2>404 Error: Asset Not Found</h2>"), 404
 
@@ -215,7 +200,7 @@ def view_asset():
     '''
     return render_template_string(HTML_PAGE, page_title=r[1], content=content)
 
-# CREATE & FILE UPLOAD (WITH CLOUDINARY INTEGRATION)
+# CREATE & FILE UPLOAD
 @app.route("/assets/upload", methods=["GET", "POST"])
 def upload_asset():
     if not session.get("user"):
@@ -229,7 +214,6 @@ def upload_asset():
         
         file_url = None
         if uploaded_file and uploaded_file.filename != "":
-            # Upload directly to Cloudinary as raw file to support .glb / .zip
             upload_result = cloudinary.uploader.upload(
                 uploaded_file,
                 resource_type="raw",
@@ -237,11 +221,12 @@ def upload_asset():
             )
             file_url = upload_result.get("secure_url")
             
-        conn = sqlite3.connect("database.db")
+        conn = get_db_connection()
         c = conn.cursor()
-        c.execute("INSERT INTO assets (title, category, format, description, filename) VALUES (?, ?, ?, ?, ?)",
+        c.execute("INSERT INTO assets (title, category, format, description, filename) VALUES (%s, %s, %s, %s, %s)",
                   (title, category, fmt, desc, file_url))
         conn.commit()
+        c.close()
         conn.close()
         return redirect("/assets/search")
 
@@ -249,7 +234,7 @@ def upload_asset():
     <h2>Add New 3D Asset & Upload File</h2>
     <form method="POST" enctype="multipart/form-data">
         <label>Asset Title *</label>
-        <input type="text" name="title" required placeholder="e.g., Low-Poly Cyberpunk Sword">
+        <input type="text" name="title" required>
         <label>Category *</label>
         <select name="category">
             <option value="Character">Character</option>
@@ -258,9 +243,9 @@ def upload_asset():
             <option value="Texture">Texture / UV</option>
         </select>
         <label>File Format *</label>
-        <input type="text" name="format" required placeholder="e.g., .OBJ, .BLEND, .FBX, .PNG">
+        <input type="text" name="format" required>
         <label>Technical Description *</label>
-        <textarea name="description" rows="4" required placeholder="Describe polygon count, UV mapping, textures..."></textarea>
+        <textarea name="description" rows="4" required></textarea>
         <label>Attach File (3D Model, Image, or ZIP)</label>
         <input type="file" name="file">
         <button type="submit">Save & Upload to Cloud</button>
@@ -274,7 +259,7 @@ def edit_asset():
     if not session.get("user"):
         return redirect("/auth/login")
     asset_id = request.args.get("id")
-    conn = sqlite3.connect("database.db")
+    conn = get_db_connection()
     c = conn.cursor()
 
     if request.method == "POST":
@@ -282,14 +267,16 @@ def edit_asset():
         category = request.form["category"]
         fmt = request.form["format"]
         desc = request.form["description"]
-        c.execute("UPDATE assets SET title=?, category=?, format=?, description=? WHERE id=?",
+        c.execute("UPDATE assets SET title=%s, category=%s, format=%s, description=%s WHERE id=%s",
                   (title, category, fmt, desc, asset_id))
         conn.commit()
+        c.close()
         conn.close()
         return redirect(f"/assets/view?id={asset_id}")
 
-    c.execute("SELECT id, title, category, format, description FROM assets WHERE id=?", (asset_id,))
+    c.execute("SELECT id, title, category, format, description FROM assets WHERE id=%s", (asset_id,))
     r = c.fetchone()
+    c.close()
     conn.close()
     content = f'''
     <h2>Edit Asset (ID: {r[0]})</h2>
@@ -313,39 +300,40 @@ def delete_asset():
     if not session.get("user"):
         return redirect("/auth/login")
     asset_id = request.args.get("id")
-    conn = sqlite3.connect("database.db")
+    conn = get_db_connection()
     c = conn.cursor()
-    c.execute("DELETE FROM assets WHERE id=?", (asset_id,))
+    c.execute("DELETE FROM assets WHERE id=%s", (asset_id,))
     conn.commit()
+    c.close()
     conn.close()
     return redirect("/assets/search")
 
-# HYBRID DOWNLOAD ROUTE (Handles both local GitHub files and new Cloudinary links)
+# DOWNLOAD ROUTE
 @app.route("/assets/download")
 def download_file():
     filename = request.args.get("file")
     if not filename:
         return "File not found", 404
         
-    # If the filename is a full URL (from Cloudinary), redirect to it directly
     if filename.startswith("http://") or filename.startswith("https://"):
         return redirect(filename)
         
-    # If it is a local filename (from your default GitHub assets), serve it from the /uploads folder
-    return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=True)
+    return "File not found", 404
 
-# --- 3. SECURITY & AUTHENTICATION (Password Hashing) ---
+# --- 3. SECURITY & AUTHENTICATION ---
 @app.route("/auth/login", methods=["GET", "POST"])
 def login():
     error = ""
     if request.method == "POST":
         username = request.form["username"]
         password = request.form["password"]
-        conn = sqlite3.connect("database.db")
+        conn = get_db_connection()
         c = conn.cursor()
-        c.execute("SELECT password_hash FROM users WHERE username=?", (username,))
+        c.execute("SELECT password_hash FROM users WHERE username=%s", (username,))
         row = c.fetchone()
+        c.close()
         conn.close()
+        
         if row and check_password_hash(row[0], password):
             session["user"] = username
             return redirect("/assets/search")
@@ -369,20 +357,6 @@ def login():
 def logout():
     session.pop("user", None)
     return redirect("/assets/search")
-
-# --- 4. SEO ROUTES (Robots.txt & Sitemap.xml) ---
-@app.route("/robots.txt")
-def robots():
-    return Response("User-agent: *\nAllow: /\nSitemap: /sitemap.xml", mimetype="text/plain")
-
-@app.route("/sitemap.xml")
-def sitemap():
-    xml = '''<?xml version="1.0" encoding="UTF-8"?>
-    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-        <url><loc>/assets/search</loc><priority>1.0</priority></url>
-        <url><loc>/auth/login</loc><priority>0.8</priority></url>
-    </urlset>'''
-    return Response(xml, mimetype="application/xml")
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
