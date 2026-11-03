@@ -1,4 +1,3 @@
-
 import os
 import sqlite3
 import cloudinary
@@ -15,6 +14,14 @@ app.secret_key = "cpit251_super_secret_key_mohannad"
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+
+# --- CLOUDINARY CONFIGURATION ---
+cloudinary.config(
+  cloud_name = "y5oxbi6z",
+  api_key = "536198723416148",
+  api_secret = "kCeFanEjLKdnIflWO0LlAR67Tqo", 
+  secure = True
+)
 
 # --- 1. DATABASE SETUP (SQLite) ---
 def init_db():
@@ -40,6 +47,26 @@ def init_db():
     if not c.fetchone():
         hashed_pw = generate_password_hash("password123")
         c.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", ("admin", hashed_pw))
+    
+    # --- AUTO-SEED DEFAULT ASSETS SO RENDER NEVER WIPES THEM ---
+    c.execute("SELECT COUNT(*) FROM assets")
+    if c.fetchone()[0] == 0:
+        default_assets = [
+            ("Modular 3D Drawer Furniture", "Environment", ".BLEND",
+             "Native Blender 3D scene file containing a modular drawer environment prop. Includes clean polygon topology, local transformation hierarchies, and material slot definitions.",
+             "Mydrawer.blend"),
+            
+            ("Enemy Bacteria (Level 0)", "Character", ".ZIP",
+             "Kaydara FBX binary character asset bundled with external textures. Features a skeletal armature hierarchy and polygon mesh geometry.",
+             "bacteria-fbx-free-standard.zip"),
+            
+            ("Claidheamh Mòr Two-Handed Sword", "Rigged Model", ".GLB",
+             "glTF 2.0 binary weapon asset. Contains dual skinned mesh primitives rigged to a weapon_bone armature hierarchy with embedded PBR textures.",
+             "cladheamh mor.glb"),
+            
+        ]
+        c.executemany("INSERT INTO assets (title, category, format, description, filename) VALUES (?, ?, ?, ?, ?)", default_assets)
+
     conn.commit()
     conn.close()
 
@@ -99,21 +126,13 @@ HTML_PAGE = '''
 </html>
 '''
 
-cloudinary.config(
-  cloud_name = "y5oxbi6z",
-  api_key = "536198723416148",
-  api_secret = "kCeFanEjLKdnIflWO0LlAR67Tqo",
-  secure = True
-)
-
-
 # --- 2. URL ROUTES (Demonstrating Structured URLs & Query Strings) ---
 
 @app.route("/")
 def home():
     return redirect("/assets/search")
 
-# READ & SEARCH (URL Example: /assets/search?q=sword&category=Rigged)
+# READ & SEARCH 
 @app.route("/assets/search", methods=["GET"])
 def search_assets():
     query = request.args.get("q", "")
@@ -136,7 +155,7 @@ def search_assets():
 
     items_html = ""
     for r in rows:
-        file_link = f'<a class="btn btn-secondary" href="/assets/download?file={r[5]}">Download File ({r[5]})</a>' if r[5] else ""
+        file_link = f'<a class="btn btn-secondary" href="/assets/download?file={r[5]}">Download File</a>' if r[5] else ""
         admin_btns = ""
         if session.get("user"):
             admin_btns = f'''
@@ -173,7 +192,7 @@ def search_assets():
     '''
     return render_template_string(HTML_PAGE, page_title="Browse 3D Assets", content=content)
 
-# VIEW SINGLE ITEM (URL Example: /assets/view?id=1)
+# VIEW SINGLE ITEM
 @app.route("/assets/view", methods=["GET"])
 def view_asset():
     asset_id = request.args.get("id", "1")
@@ -185,7 +204,7 @@ def view_asset():
     if not r:
         return render_template_string(HTML_PAGE, page_title="404 Not Found", content="<h2>404 Error: Asset Not Found</h2>"), 404
 
-    download_btn = f'<p><a class="btn" href="/assets/download?file={r[5]}">Download Attached File ({r[5]})</a></p>' if r[5] else "<p>No file attached.</p>"
+    download_btn = f'<p><a class="btn" href="/assets/download?file={r[5]}">Download Attached File</a></p>' if r[5] else "<p>No file attached.</p>"
     content = f'''
     <h2>{r[1]}</h2>
     <p><strong>Category:</strong> {r[2]} | <strong>Format:</strong> {r[3]} | <strong>Asset ID:</strong> {r[0]}</p>
@@ -196,7 +215,7 @@ def view_asset():
     '''
     return render_template_string(HTML_PAGE, page_title=r[1], content=content)
 
-# CREATE & FILE UPLOAD (URL: /assets/upload)
+# CREATE & FILE UPLOAD (WITH CLOUDINARY INTEGRATION)
 @app.route("/assets/upload", methods=["GET", "POST"])
 def upload_asset():
     if not session.get("user"):
@@ -210,10 +229,10 @@ def upload_asset():
         
         file_url = None
         if uploaded_file and uploaded_file.filename != "":
-            # Upload directly to Cloudinary
+            # Upload directly to Cloudinary as raw file to support .glb / .zip
             upload_result = cloudinary.uploader.upload(
-                uploaded_file, 
-                resource_type="auto",
+                uploaded_file,
+                resource_type="raw",
                 folder="mohannad3d_assets"
             )
             file_url = upload_result.get("secure_url")
@@ -244,12 +263,12 @@ def upload_asset():
         <textarea name="description" rows="4" required placeholder="Describe polygon count, UV mapping, textures..."></textarea>
         <label>Attach File (3D Model, Image, or ZIP)</label>
         <input type="file" name="file">
-        <button type="submit">Save & Upload to Server</button>
+        <button type="submit">Save & Upload to Cloud</button>
     </form>
     '''
     return render_template_string(HTML_PAGE, page_title="Upload New Asset", content=content)
 
-# UPDATE ITEM (URL Example: /assets/edit?id=1)
+# UPDATE ITEM
 @app.route("/assets/edit", methods=["GET", "POST"])
 def edit_asset():
     if not session.get("user"):
@@ -288,7 +307,7 @@ def edit_asset():
     '''
     return render_template_string(HTML_PAGE, page_title="Edit Asset", content=content)
 
-# DELETE ITEM (URL Example: /assets/delete?id=1)
+# DELETE ITEM
 @app.route("/assets/delete")
 def delete_asset():
     if not session.get("user"):
@@ -301,13 +320,19 @@ def delete_asset():
     conn.close()
     return redirect("/assets/search")
 
-# DOWNLOAD FILE (Redirects directly to Cloudinary permanent secure URL)
+# HYBRID DOWNLOAD ROUTE (Handles both local GitHub files and new Cloudinary links)
 @app.route("/assets/download")
 def download_file():
-    file_url = request.args.get("file")
-    if file_url:
-        return redirect(file_url)
-    return "File not found", 404
+    filename = request.args.get("file")
+    if not filename:
+        return "File not found", 404
+        
+    # If the filename is a full URL (from Cloudinary), redirect to it directly
+    if filename.startswith("http://") or filename.startswith("https://"):
+        return redirect(filename)
+        
+    # If it is a local filename (from your default GitHub assets), serve it from the /uploads folder
+    return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=True)
 
 # --- 3. SECURITY & AUTHENTICATION (Password Hashing) ---
 @app.route("/auth/login", methods=["GET", "POST"])
