@@ -4,22 +4,22 @@ import cloudinary
 import cloudinary.uploader
 import cloudinary.api
 from flask import Flask, request, redirect, url_for, session, render_template_string, Response
-from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = "cpit251_super_secret_key_mohannad"
 
 # --- SECURE CLOUDINARY CONFIGURATION ---
+# Pulls the secret safely from Render's Environment Variables
 cloudinary.config(
-  cloud_name = os.environ.get("CLOUDINARY_CLOUD_NAME", "y5oxbi6z"),
-  api_key = os.environ.get("CLOUDINARY_API_KEY", "536198723416148"),
+  cloud_name = "y5oxbi6z",
+  api_key = "536198723416148",
   api_secret = os.environ.get("CLOUDINARY_API_SECRET"),
   secure = True
 )
 
-# --- CLOUD DATABASE CONFIGURATION ---
-# Replace with your exact Neon.tech Connection String
+# --- SECURE CLOUD DATABASE CONFIGURATION ---
+# Pulls the Neon database URL safely from Render's Environment Variables
 DB_URL = os.environ.get("DATABASE_URL")
 
 def get_db_connection():
@@ -29,6 +29,7 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
+    # Table for items/assets (Postgres uses SERIAL instead of AUTOINCREMENT)
     c.execute('''CREATE TABLE IF NOT EXISTS assets (
                     id SERIAL PRIMARY KEY,
                     title TEXT NOT NULL,
@@ -37,16 +38,20 @@ def init_db():
                     description TEXT NOT NULL,
                     filename TEXT
                 )''')
+    # Table for Users
     c.execute('''CREATE TABLE IF NOT EXISTS users (
                     id SERIAL PRIMARY KEY,
                     username TEXT UNIQUE NOT NULL,
                     password_hash TEXT NOT NULL
                 )''')
     
+    # Create default admin account so you can log in
     c.execute("SELECT * FROM users WHERE username = 'admin'")
     if not c.fetchone():
         hashed_pw = generate_password_hash("password123")
         c.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)", ("admin", hashed_pw))
+    
+    # No default assets are added here. The database starts completely empty!
     
     conn.commit()
     c.close()
@@ -98,7 +103,7 @@ HTML_PAGE = '''
         {{ content | safe }}
     </main>
     <footer>
-        <p>Developed by Mohannad Al Ghamdi | Website Design Project</p>
+        <p>Developed by Mohannad Al Ghamdi | CPIT251 Website Design Project</p>
     </footer>
 </body>
 </html>
@@ -122,6 +127,7 @@ def search_assets():
     params = []
     
     if query:
+        # ILIKE is used in Postgres for case-insensitive searching
         sql += " AND (title ILIKE %s OR description ILIKE %s)" 
         params.extend([f"%{query}%", f"%{query}%"])
     if category:
@@ -153,7 +159,7 @@ def search_assets():
         '''
 
     if not items_html:
-        items_html = "<p>No assets found.</p>"
+        items_html = "<p>No assets found. Click '+ Add & Upload Asset' to create one!</p>"
 
     content = f'''
     <h2>Browse & Search 3D Assets</h2>
@@ -207,153 +213,4 @@ def upload_asset():
         category = request.form["category"]
         fmt = request.form["format"]
         desc = request.form["description"]
-        uploaded_file = request.files.get("file")
-        
-        file_url = None
-        if uploaded_file and uploaded_file.filename != "":
-            upload_result = cloudinary.uploader.upload(
-                uploaded_file,
-                resource_type="raw",
-                folder="mohannad3d_assets"
-            )
-            file_url = upload_result.get("secure_url")
-            
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("INSERT INTO assets (title, category, format, description, filename) VALUES (%s, %s, %s, %s, %s)",
-                  (title, category, fmt, desc, file_url))
-        conn.commit()
-        c.close()
-        conn.close()
-        return redirect("/assets/search")
-
-    content = '''
-    <h2>Add New 3D Asset & Upload File</h2>
-    <form method="POST" enctype="multipart/form-data">
-        <label>Asset Title *</label>
-        <input type="text" name="title" required>
-        <label>Category *</label>
-        <select name="category">
-            <option value="Character">Character</option>
-            <option value="Environment">Environment</option>
-            <option value="Rigged">Rigged Model</option>
-            <option value="Texture">Texture / UV</option>
-        </select>
-        <label>File Format *</label>
-        <input type="text" name="format" required>
-        <label>Technical Description *</label>
-        <textarea name="description" rows="4" required></textarea>
-        <label>Attach File (3D Model, Image, or ZIP)</label>
-        <input type="file" name="file">
-        <button type="submit">Save & Upload to Cloud</button>
-    </form>
-    '''
-    return render_template_string(HTML_PAGE, page_title="Upload New Asset", content=content)
-
-# UPDATE ITEM
-@app.route("/assets/edit", methods=["GET", "POST"])
-def edit_asset():
-    if not session.get("user"):
-        return redirect("/auth/login")
-    asset_id = request.args.get("id")
-    conn = get_db_connection()
-    c = conn.cursor()
-
-    if request.method == "POST":
-        title = request.form["title"]
-        category = request.form["category"]
-        fmt = request.form["format"]
-        desc = request.form["description"]
-        c.execute("UPDATE assets SET title=%s, category=%s, format=%s, description=%s WHERE id=%s",
-                  (title, category, fmt, desc, asset_id))
-        conn.commit()
-        c.close()
-        conn.close()
-        return redirect(f"/assets/view?id={asset_id}")
-
-    c.execute("SELECT id, title, category, format, description FROM assets WHERE id=%s", (asset_id,))
-    r = c.fetchone()
-    c.close()
-    conn.close()
-    content = f'''
-    <h2>Edit Asset (ID: {r[0]})</h2>
-    <form method="POST">
-        <label>Asset Title</label>
-        <input type="text" name="title" value="{r[1]}" required>
-        <label>Category</label>
-        <input type="text" name="category" value="{r[2]}" required>
-        <label>Format</label>
-        <input type="text" name="format" value="{r[3]}" required>
-        <label>Description</label>
-        <textarea name="description" rows="4" required>{r[4]}</textarea>
-        <button type="submit">Update Record</button>
-    </form>
-    '''
-    return render_template_string(HTML_PAGE, page_title="Edit Asset", content=content)
-
-# DELETE ITEM
-@app.route("/assets/delete")
-def delete_asset():
-    if not session.get("user"):
-        return redirect("/auth/login")
-    asset_id = request.args.get("id")
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("DELETE FROM assets WHERE id=%s", (asset_id,))
-    conn.commit()
-    c.close()
-    conn.close()
-    return redirect("/assets/search")
-
-# DOWNLOAD ROUTE
-@app.route("/assets/download")
-def download_file():
-    filename = request.args.get("file")
-    if not filename:
-        return "File not found", 404
-        
-    if filename.startswith("http://") or filename.startswith("https://"):
-        return redirect(filename)
-        
-    return "File not found", 404
-
-# --- 3. SECURITY & AUTHENTICATION ---
-@app.route("/auth/login", methods=["GET", "POST"])
-def login():
-    error = ""
-    if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("SELECT password_hash FROM users WHERE username=%s", (username,))
-        row = c.fetchone()
-        c.close()
-        conn.close()
-        
-        if row and check_password_hash(row[0], password):
-            session["user"] = username
-            return redirect("/assets/search")
-        error = "<p style='color:red;'>Invalid credentials! Try admin / password123</p>"
-
-    content = f'''
-    <h2>Secure Administrator Login</h2>
-    <p>Passwords are encrypted using PBKDF2 SHA-256 cryptographic hashing.</p>
-    {error}
-    <form method="POST">
-        <label>Username</label>
-        <input type="text" name="username" value="admin" required>
-        <label>Password</label>
-        <input type="password" name="password" value="password123" required>
-        <button type="submit">Authenticate via POST</button>
-    </form>
-    '''
-    return render_template_string(HTML_PAGE, page_title="Admin Login", content=content)
-
-@app.route("/auth/logout")
-def logout():
-    session.pop("user", None)
-    return redirect("/assets/search")
-
-if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+        uploaded
