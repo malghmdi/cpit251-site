@@ -10,17 +10,17 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = "cpit251_super_secret_key_mohannad"
 
-# --- CLOUDINARY CONFIGURATION ---
+# --- SECURE CLOUDINARY CONFIGURATION ---
 cloudinary.config(
-  cloud_name = "y5oxbi6z",
-  api_key = "536198723416148",
-  api_secret = "kCeFanEjLKdnIflWO0LlAR67Tqo", 
+  cloud_name = os.environ.get("CLOUDINARY_CLOUD_NAME", "y5oxbi6z"),
+  api_key = os.environ.get("CLOUDINARY_API_KEY", "536198723416148"),
+  api_secret = os.environ.get("CLOUDINARY_API_SECRET"),
   secure = True
 )
 
 # --- CLOUD DATABASE CONFIGURATION ---
 # Replace with your exact Neon.tech Connection String
-DB_URL = "postgresql://neondb_owner:npg_CuvDcYlA3J1P@ep-purple-wind-b3zam3ga-pooler.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+DB_URL = os.environ.get("DATABASE_URL")
 
 def get_db_connection():
     return psycopg2.connect(DB_URL)
@@ -29,7 +29,6 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
-    # Table for items/assets (Postgres uses SERIAL instead of AUTOINCREMENT)
     c.execute('''CREATE TABLE IF NOT EXISTS assets (
                     id SERIAL PRIMARY KEY,
                     title TEXT NOT NULL,
@@ -38,14 +37,12 @@ def init_db():
                     description TEXT NOT NULL,
                     filename TEXT
                 )''')
-    # Table for Users
     c.execute('''CREATE TABLE IF NOT EXISTS users (
                     id SERIAL PRIMARY KEY,
                     username TEXT UNIQUE NOT NULL,
                     password_hash TEXT NOT NULL
                 )''')
     
-    # Create default admin account so you can log in
     c.execute("SELECT * FROM users WHERE username = 'admin'")
     if not c.fetchone():
         hashed_pw = generate_password_hash("password123")
